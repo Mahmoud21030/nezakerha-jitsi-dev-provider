@@ -24,6 +24,7 @@ test('network uses browser-safe HTTPS tunnel plus Pinggy UDP for JVB', async () 
   assert.match(network, /pinggy --type udp -l 10000/)
   assert.match(network, /nokey@localhost\.run/)
   assert.match(network, /-R 80:127\.0\.0\.1:8000/)
+  assert.match(network, /tunneled with tls termination/)
 })
 
 test('recorder polls the scoped control endpoint and finalizes ffmpeg', async () => {

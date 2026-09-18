@@ -40,7 +40,7 @@ echo $! > runtime/http-tunnel.pid
 
 meet_url=""
 for _ in $(seq 1 90); do
-  meet_url="$(grep -Eo 'https://[^[:space:]"<>]+' runtime/localhost-run.log | sed -E 's/[[:punct:]]$//' | head -n 1 || true)"
+  meet_url="$(grep -F 'tunneled with tls termination' runtime/localhost-run.log | grep -Eo 'https://[^[:space:]"<>]+' | sed -E 's/[[:punct:]]$//' | head -n 1 || true)"
   if [[ "$meet_url" == https://* ]]; then
     break
   fi
