@@ -1,0 +1,77 @@
+name: Temporary Jitsi Recorder
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_id:
+        required: true
+        type: string
+      room_name:
+        required: true
+        type: string
+      meet_url:
+        required: true
+        type: string
+      max_minutes:
+        required: false
+        default: "5"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recorder-${{ inputs.session_id }}
+  cancel-in-progress: true
+
+jobs:
+  recorder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SESSION_ID: ${{ inputs.session_id }}
+      ROOM_NAME: ${{ inputs.room_name }}
+      MEET_URL: ${{ inputs.meet_url }}
+      MAX_MINUTES: ${{ inputs.max_minutes }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install recorder dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg pulseaudio xvfb
+
+      - name: Wait for room
+        run: bash ./scripts/wait-for-meet.sh
+
+      - name: Run synthetic publisher and recorder
+        run: bash ./scripts/run-recorder.sh
+
+      - name: Validate recording
+        run: bash ./scripts/validate-recording.sh
+
+      - name: Upload short-lived QA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recording-${{ inputs.session_id }}
+          path: recordings/
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ inputs.session_id }}
+          path: runtime/
+          retention-days: 1
+          if-no-files-found: warn

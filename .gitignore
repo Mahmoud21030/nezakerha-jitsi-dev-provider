@@ -1,0 +1,6 @@
+.env
+.jitsi-cfg/
+runtime/
+recordings/
+node_modules/
+*.log

@@ -1,0 +1,71 @@
+name: Temporary Jitsi Provider
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_id:
+        required: true
+        type: string
+      room_name:
+        required: true
+        type: string
+      max_minutes:
+        required: false
+        default: "5"
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: provider-${{ inputs.session_id }}
+  cancel-in-progress: true
+
+jobs:
+  provider:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SESSION_ID: ${{ inputs.session_id }}
+      ROOM_NAME: ${{ inputs.room_name }}
+      MAX_MINUTES: ${{ inputs.max_minutes }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tunnel tools
+        run: |
+          npm install --global pinggy
+          curl -L --fail --silent --show-error https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+          chmod +x /tmp/cloudflared
+
+      - name: Start public endpoints
+        id: network
+        run: bash ./scripts/start-network.sh
+
+      - name: Start Jitsi
+        env:
+          MEET_URL: ${{ steps.network.outputs.meet_url }}
+          JVB_PUBLIC_IP: ${{ steps.network.outputs.jvb_public_ip }}
+          JVB_PUBLIC_PORT: ${{ steps.network.outputs.jvb_public_port }}
+        run: bash ./scripts/start-jitsi.sh
+
+      - name: Provider smoke
+        env:
+          MEET_URL: ${{ steps.network.outputs.meet_url }}
+        run: bash ./scripts/smoke-provider.sh
+
+      - name: Start recorder job
+        env:
+          MEET_URL: ${{ steps.network.outputs.meet_url }}
+        run: |
+          gh workflow run recorder.yml --repo "$GITHUB_REPOSITORY" -f session_id="$SESSION_ID" -f room_name="$ROOM_NAME" -f meet_url="$MEET_URL" -f max_minutes="$MAX_MINUTES"
+
+      - name: Keep provider alive
+        run: sleep "$((MAX_MINUTES * 60))"
+
+      - name: Diagnostics
+        if: always()
+        run: bash ./scripts/diagnostics.sh
