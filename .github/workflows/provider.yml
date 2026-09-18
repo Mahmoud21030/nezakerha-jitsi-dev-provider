@@ -1,4 +1,4 @@
-name: Temporary Jitsi Provider
+name: Temporary Jitsi Live + Recorder
 
 on:
   workflow_dispatch:
@@ -16,24 +16,27 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
-  group: provider-${{ inputs.session_id }}
+  group: live-${{ inputs.session_id }}
   cancel-in-progress: true
 
 jobs:
-  provider:
+  live:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       SESSION_ID: ${{ inputs.session_id }}
       ROOM_NAME: ${{ inputs.room_name }}
       MAX_MINUTES: ${{ inputs.max_minutes }}
-      GH_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
       - name: Install tunnel tools
         run: |
@@ -57,14 +60,61 @@ jobs:
           MEET_URL: ${{ steps.network.outputs.meet_url }}
         run: bash ./scripts/smoke-provider.sh
 
-      - name: Start recorder job
+      - name: Install recorder dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg pulseaudio xvfb
+
+      - name: Start resource monitor
+        run: |
+          mkdir -p runtime
+          (
+            while true; do
+              echo "===== $(date -u +%FT%TZ) ====="
+              free -m
+              echo "--- load ---"
+              uptime
+              echo "--- docker ---"
+              docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' || true
+              echo
+              sleep 5
+            done
+          ) >> runtime/resources.log 2>&1 &
+          echo $! > runtime/resources.pid
+
+      - name: Run live room + recorder
         env:
           MEET_URL: ${{ steps.network.outputs.meet_url }}
-        run: |
-          gh workflow run recorder.yml --repo "$GITHUB_REPOSITORY" -f session_id="$SESSION_ID" -f room_name="$ROOM_NAME" -f meet_url="$MEET_URL" -f max_minutes="$MAX_MINUTES"
+        run: bash ./scripts/run-recorder.sh
 
-      - name: Keep provider alive
-        run: sleep "$(((MAX_MINUTES + 5) * 60))"
+      - name: Validate recording
+        run: bash ./scripts/validate-recording.sh
+
+      - name: Resource summary
+        if: always()
+        run: |
+          if [ -f runtime/resources.pid ]; then kill "$(cat runtime/resources.pid)" 2>/dev/null || true; fi
+          echo "=== final memory ==="
+          free -h
+          echo "=== final load ==="
+          uptime
+          echo "=== docker stats ==="
+          docker stats --no-stream || true
+          echo "=== resource log tail ==="
+          tail -n 120 runtime/resources.log 2>/dev/null || true
+
+      - name: Upload short-lived QA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jitsi-live-${{ inputs.session_id }}
+          path: |
+            recordings/
+            runtime/
+          retention-days: 1
+          if-no-files-found: warn
 
       - name: Diagnostics
         if: always()
