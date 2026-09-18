@@ -14,7 +14,8 @@ function roomUrl({ publish }) {
     `config.startWithAudioMuted=${publish ? 'false' : 'true'}`,
     `config.startWithVideoMuted=${publish ? 'false' : 'true'}`,
     `config.channelLastN=${publish ? '0' : '-1'}`,
-    'config.disableDeepLinking=true'
+    'config.disableDeepLinking=true',
+    'config.preferBosh=true'
   ];
 
   return `${meetUrl.replace(/\/$/, '')}/${roomName}#${args.join('&')}`;
