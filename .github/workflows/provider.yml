@@ -13,6 +13,14 @@ on:
         required: false
         default: "5"
         type: string
+      live_id:
+        required: false
+        default: ""
+        type: string
+      callback_url:
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -24,11 +32,15 @@ concurrency:
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 70
     env:
       SESSION_ID: ${{ inputs.session_id }}
       ROOM_NAME: ${{ inputs.room_name }}
       MAX_MINUTES: ${{ inputs.max_minutes }}
+      LIVE_ID: ${{ inputs.live_id }}
+      CALLBACK_URL: ${{ inputs.callback_url }}
+      CALLBACK_SECRET: ${{ secrets.DEV_LIVE_CALLBACK_SECRET }}
+      RECORDER_SECRET: ${{ secrets.DEV_LIVE_RECORDER_SECRET }}
 
     steps:
       - uses: actions/checkout@v4
@@ -38,12 +50,20 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Create scoped recorder credential
+        if: ${{ inputs.live_id != '' && inputs.callback_url != '' }}
+        run: python3 scripts/make-recorder-token.py
+
       - name: Install tunnel tools
         run: npm install --global pinggy
 
       - name: Start public endpoints
         id: network
         run: bash ./scripts/start-network.sh
+
+      - name: Callback network ready
+        if: ${{ inputs.callback_url != '' }}
+        run: python3 scripts/provider-callback.py network_ready
 
       - name: Start Jitsi
         env:
@@ -56,6 +76,12 @@ jobs:
         env:
           MEET_URL: ${{ steps.network.outputs.meet_url }}
         run: bash ./scripts/smoke-provider.sh
+
+      - name: Callback provider ready
+        if: ${{ inputs.callback_url != '' }}
+        env:
+          MEET_URL: ${{ steps.network.outputs.meet_url }}
+        run: python3 scripts/provider-callback.py provider_ready
 
       - name: Install recorder dependencies
         run: |
@@ -91,6 +117,24 @@ jobs:
       - name: Validate recording
         run: bash ./scripts/validate-recording.sh
 
+      - name: Callback uploading
+        if: ${{ inputs.callback_url != '' }}
+        env:
+          RECORDING_STATUS: uploading
+        run: python3 scripts/provider-callback.py uploading
+
+      - name: Upload recording directly to Nezakerha storage
+        id: storage
+        if: ${{ inputs.callback_url != '' }}
+        run: python3 scripts/upload-recording.py
+
+      - name: Callback completed
+        if: ${{ inputs.callback_url != '' && success() }}
+        env:
+          RECORDING_STATUS: completed
+          RECORDING_ASSET_ID: ${{ steps.storage.outputs.recording_asset_id }}
+        run: python3 scripts/provider-callback.py completed
+
       - name: Resource summary
         if: always()
         run: |
@@ -105,7 +149,7 @@ jobs:
           tail -n 120 runtime/resources.log 2>/dev/null || true
 
       - name: Upload short-lived QA artifacts
-        if: always()
+        if: ${{ always() && inputs.callback_url == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: jitsi-live-${{ inputs.session_id }}
@@ -115,6 +159,29 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+      - name: Upload integration diagnostics
+        if: ${{ always() && inputs.callback_url != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jitsi-live-diagnostics-${{ inputs.session_id }}
+          path: runtime/
+          retention-days: 1
+          if-no-files-found: warn
+
       - name: Diagnostics
         if: always()
         run: bash ./scripts/diagnostics.sh
+
+      - name: Callback failed
+        if: ${{ failure() && inputs.callback_url != '' }}
+        env:
+          RECORDING_STATUS: failed
+          FAILURE_REASON: workflow_failed
+        run: python3 scripts/provider-callback.py failed || true
+
+      - name: Callback cancelled
+        if: ${{ cancelled() && inputs.callback_url != '' }}
+        env:
+          RECORDING_STATUS: cancelled
+          FAILURE_REASON: workflow_cancelled
+        run: python3 scripts/provider-callback.py cancelled || true
