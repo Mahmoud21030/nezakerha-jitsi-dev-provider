@@ -9,7 +9,7 @@ if (!meetUrl || !roomName) {
 
 function roomUrl({ publish }) {
   const args = [
-    'config.prejoinPageEnabled=false',
+    'config.prejoinConfig.enabled=false',
     'config.p2p.enabled=false',
     `config.startWithAudioMuted=${publish ? 'false' : 'true'}`,
     `config.startWithVideoMuted=${publish ? 'false' : 'true'}`,
