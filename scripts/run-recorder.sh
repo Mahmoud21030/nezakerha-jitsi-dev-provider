@@ -35,10 +35,7 @@ if ! grep -q "ROOM_TEST_READY" runtime/room-test.log 2>/dev/null; then
   exit 1
 fi
 
-record_seconds=$(( MAX_MINUTES * 60 - 30 ))
-if (( record_seconds < 20 )); then
-  record_seconds=20
-fi
+record_seconds=$(( MAX_MINUTES * 60 ))
 
 rc=0
 timeout --signal=INT "$record_seconds" ffmpeg -y   -thread_queue_size 1024   -f x11grab -framerate 25 -video_size 1280x720 -i :99.0   -thread_queue_size 1024   -f pulse -i recording.monitor   -c:v libx264 -preset veryfast -crf 25 -pix_fmt yuv420p   -c:a aac -b:a 128k   -movflags +faststart   "recordings/$SESSION_ID.mp4" > runtime/ffmpeg.log 2>&1 || rc=$?

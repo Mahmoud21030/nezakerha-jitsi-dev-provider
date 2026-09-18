@@ -64,7 +64,7 @@ jobs:
           gh workflow run recorder.yml --repo "$GITHUB_REPOSITORY" -f session_id="$SESSION_ID" -f room_name="$ROOM_NAME" -f meet_url="$MEET_URL" -f max_minutes="$MAX_MINUTES"
 
       - name: Keep provider alive
-        run: sleep "$((MAX_MINUTES * 60))"
+        run: sleep "$(((MAX_MINUTES + 5) * 60))"
 
       - name: Diagnostics
         if: always()
