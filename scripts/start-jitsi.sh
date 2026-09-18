@@ -7,7 +7,7 @@ set -euo pipefail
 
 mkdir -p runtime
 if [[ ! -d runtime/docker-jitsi-meet/.git ]]; then
-  git clone --depth 1 https://github.com/jitsi/docker-jitsi-meet.git runtime/docker-jitsi-meet
+  git clone --depth 1 --branch stable-11031 https://github.com/jitsi/docker-jitsi-meet.git runtime/docker-jitsi-meet
 fi
 
 cd runtime/docker-jitsi-meet
@@ -19,6 +19,7 @@ mkdir -p "$CONFIG_DIR"
 cat >> .env <<EOF
 
 CONFIG=$CONFIG_DIR
+JITSI_IMAGE_VERSION=stable-11031
 HTTP_PORT=8000
 HTTPS_PORT=8443
 TZ=UTC
