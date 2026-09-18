@@ -2,74 +2,68 @@ import { chromium } from 'playwright';
 
 const meetUrl = process.env.MEET_URL;
 const roomName = process.env.ROOM_NAME;
-if (!meetUrl || !roomName) throw new Error('MEET_URL and ROOM_NAME are required');
 
-const domain = new URL(meetUrl).host;
+if (!meetUrl || !roomName) {
+  throw new Error('MEET_URL and ROOM_NAME are required');
+}
 
-function embedHtml(displayName, publish) {
-  const config = {
-    prejoinPageEnabled: false,
-    startWithAudioMuted: !publish,
-    startWithVideoMuted: !publish,
-    disableDeepLinking: true,
-    enableWelcomePage: false
-  };
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    html,body,#meet{margin:0;width:100%;height:100%;overflow:hidden;background:#111}
-  </style>
-</head>
-<body>
-  <div id="meet"></div>
-  <script src="${meetUrl.replace(/\/$/, '')}/external_api.js"></script>
-  <script>
-    const api = new JitsiMeetExternalAPI(${JSON.stringify(domain)}, {
-      roomName: ${JSON.stringify(roomName)},
-      parentNode: document.getElementById('meet'),
-      width: '100%',
-      height: '100%',
-      userInfo: { displayName: ${JSON.stringify(displayName)} },
-      configOverwrite: ${JSON.stringify(config)}
-    });
-    api.addListener('videoConferenceJoined', () => console.log('JITSI_JOINED:${displayName}'));
-    api.addListener('participantJoined', e => console.log('PARTICIPANT_JOINED:' + e.displayName));
-    api.addListener('participantLeft', e => console.log('PARTICIPANT_LEFT:' + e.id));
-    api.addListener('cameraError', e => console.log('CAMERA_ERROR:' + JSON.stringify(e)));
-    api.addListener('micError', e => console.log('MIC_ERROR:' + JSON.stringify(e)));
-  </script>
-</body>
-</html>`;
+function roomUrl({ publish }) {
+  const args = [
+    'config.prejoinPageEnabled=false',
+    'config.p2p.enabled=false',
+    `config.startWithAudioMuted=${publish ? 'false' : 'true'}`,
+    `config.startWithVideoMuted=${publish ? 'false' : 'true'}`,
+    `config.channelLastN=${publish ? '0' : '-1'}`,
+    'config.disableDeepLinking=true'
+  ];
+
+  return `${meetUrl.replace(/\/$/, '')}/${roomName}#${args.join('&')}`;
+}
+
+async function waitJoined(page, label) {
+  await page.waitForFunction(
+    () => Boolean(window.APP?.conference?.isJoined?.()),
+    undefined,
+    { timeout: 90000 }
+  );
+
+  await page.evaluate(name => {
+    try {
+      window.APP?.conference?.changeLocalDisplayName?.(name);
+    } catch {}
+  }, label);
+
+  console.log(`JITSI_JOINED:${label}`);
 }
 
 const recorder = await chromium.launch({
   headless: false,
   args: [
     '--no-sandbox',
+    '--disable-setuid-sandbox',
     '--autoplay-policy=no-user-gesture-required',
     '--disable-dev-shm-usage'
   ]
 });
 
-let recorderJoined = false;
-let publisherJoined = false;
-let recorderSawPublisher = false;
-
 const recorderPage = await recorder.newPage({ viewport: { width: 1280, height: 720 } });
-recorderPage.on('console', m => {
-  const value = m.text();
-  console.log('RECORDER_CONSOLE ' + value);
-  if (value.includes('JITSI_JOINED:QA Recorder')) recorderJoined = true;
-  if (value.includes('PARTICIPANT_JOINED:QA Publisher')) recorderSawPublisher = true;
+recorderPage.on('console', message => {
+  const value = message.text();
+  if (/error|failed|ice|conference/i.test(value)) {
+    console.log('RECORDER_CONSOLE ' + value);
+  }
 });
-await recorderPage.setContent(embedHtml('QA Recorder', false), { waitUntil: 'domcontentloaded' });
+
+await recorderPage.goto(roomUrl({ publish: false }), {
+  waitUntil: 'domcontentloaded',
+  timeout: 120000
+});
 
 const publisher = await chromium.launch({
   headless: true,
   args: [
     '--no-sandbox',
+    '--disable-setuid-sandbox',
     '--autoplay-policy=no-user-gesture-required',
     '--disable-dev-shm-usage',
     '--use-fake-device-for-media-stream',
@@ -78,27 +72,42 @@ const publisher = await chromium.launch({
 });
 
 const publisherPage = await publisher.newPage({ viewport: { width: 640, height: 360 } });
-publisherPage.on('console', m => {
-  const value = m.text();
-  console.log('PUBLISHER_CONSOLE ' + value);
-  if (value.includes('JITSI_JOINED:QA Publisher')) publisherJoined = true;
+publisherPage.on('console', message => {
+  const value = message.text();
+  if (/error|failed|ice|conference/i.test(value)) {
+    console.log('PUBLISHER_CONSOLE ' + value);
+  }
 });
-await publisherPage.setContent(embedHtml('QA Publisher', true), { waitUntil: 'domcontentloaded' });
 
-const deadline = Date.now() + 90000;
-while (Date.now() < deadline) {
-  if (recorderJoined && publisherJoined && recorderSawPublisher) break;
-  await new Promise(r => setTimeout(r, 1000));
-}
+await publisherPage.goto(roomUrl({ publish: true }), {
+  waitUntil: 'domcontentloaded',
+  timeout: 120000
+});
 
-if (!recorderJoined || !publisherJoined || !recorderSawPublisher) {
-  throw new Error(`Room readiness failed: recorder=${recorderJoined} publisher=${publisherJoined} recorderSawPublisher=${recorderSawPublisher}`);
-}
+await Promise.all([
+  waitJoined(recorderPage, 'QA Recorder'),
+  waitJoined(publisherPage, 'QA Publisher')
+]);
 
-await new Promise(r => setTimeout(r, 5000));
+await recorderPage.waitForFunction(
+  () => Number(window.APP?.conference?.membersCount || 0) >= 2,
+  undefined,
+  { timeout: 90000 }
+);
+
+const members = await recorderPage.evaluate(() => Number(window.APP?.conference?.membersCount || 0));
+console.log(`RECORDER_MEMBERS:${members}`);
+
+await new Promise(resolve => setTimeout(resolve, 8000));
+await recorderPage.screenshot({ path: 'runtime/recorder-ready.png' });
+
 console.log('ROOM_TEST_READY');
 
 const shutdown = async () => {
+  await Promise.allSettled([
+    publisherPage.evaluate(() => window.APP?.conference?.hangup?.()).catch(() => {}),
+    recorderPage.evaluate(() => window.APP?.conference?.hangup?.()).catch(() => {})
+  ]);
   await Promise.allSettled([publisher.close(), recorder.close()]);
   process.exit(0);
 };
