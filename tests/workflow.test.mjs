@@ -19,6 +19,13 @@ test('workflow keeps one-session one-job lifecycle with callbacks and direct upl
   assert.match(workflow, /provider-callback\.py failed/)
 })
 
+test('network uses browser-safe HTTPS tunnel plus Pinggy UDP for JVB', async () => {
+  const network = await read('scripts/start-network.sh')
+  assert.match(network, /pinggy --type udp -l 10000/)
+  assert.match(network, /nokey@localhost\.run/)
+  assert.match(network, /-R 80:127\.0\.0\.1:8000/)
+})
+
 test('recorder polls the scoped control endpoint and finalizes ffmpeg', async () => {
   const script = await read('scripts/run-recorder.sh')
   assert.match(script, /RECORDER_TOKEN/)

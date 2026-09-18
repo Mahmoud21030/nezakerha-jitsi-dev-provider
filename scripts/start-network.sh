@@ -28,22 +28,32 @@ if [[ -z "$udp_ip" || -z "$udp_port" ]]; then
   exit 1
 fi
 
-pinggy -l http://127.0.0.1:8000 'a:X-Pinggy-No-Screen:1' > runtime/pinggy-http.log 2>&1 &
-echo $! > runtime/pinggy-http.pid
+ssh \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -R 80:127.0.0.1:8000 \
+  nokey@localhost.run > runtime/localhost-run.log 2>&1 &
+echo $! > runtime/http-tunnel.pid
 
 meet_url=""
-for _ in $(seq 1 60); do
-  meet_url="$(sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' runtime/pinggy-http.log | grep -Eo 'https://[^[:space:]]+' | sed 's/[[:punct:]]$//' | head -n 1 || true)"
+for _ in $(seq 1 90); do
+  meet_url="$(grep -Eo 'https://[^[:space:]"<>]+' runtime/localhost-run.log | sed -E 's/[[:punct:]]$//' | head -n 1 || true)"
   if [[ "$meet_url" == https://* ]]; then
     break
   fi
   meet_url=""
+  if ! kill -0 "$(cat runtime/http-tunnel.pid)" 2>/dev/null; then
+    break
+  fi
   sleep 1
 done
 
 if [[ -z "$meet_url" ]]; then
-  echo "::error::Pinggy HTTPS endpoint was not created."
-  cat runtime/pinggy-http.log || true
+  echo "::error::localhost.run HTTPS endpoint was not created."
+  cat runtime/localhost-run.log || true
   exit 1
 fi
 
@@ -51,5 +61,5 @@ echo "meet_url=$meet_url" >> "$GITHUB_OUTPUT"
 echo "jvb_public_ip=$udp_ip" >> "$GITHUB_OUTPUT"
 echo "jvb_public_port=$udp_port" >> "$GITHUB_OUTPUT"
 
-echo "Meeting HTTPS endpoint ready: $meet_url"
+echo "Meeting HTTPS endpoint ready."
 echo "JVB UDP endpoint ready on public port $udp_port."

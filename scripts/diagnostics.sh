@@ -8,8 +8,8 @@ df -h
 echo "=== pinggy udp ==="
 tail -n 80 runtime/pinggy-udp.log 2>/dev/null || true
 
-echo "=== pinggy http ==="
-tail -n 80 runtime/pinggy-http.log 2>/dev/null || true
+echo "=== localhost.run http ==="
+tail -n 80 runtime/localhost-run.log 2>/dev/null || true
 
 echo "=== jitsi ==="
 if [[ -d runtime/docker-jitsi-meet ]]; then
