@@ -4,6 +4,19 @@ set -euo pipefail
 curl -fsS --retry 20 --retry-delay 2 "$MEET_URL/" >/dev/null
 curl -fsS --retry 20 --retry-delay 2 "$MEET_URL/config.js" >/dev/null
 
+browser_body="$(mktemp)"
+curl -fsS --retry 20 --retry-delay 2 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36' "$MEET_URL/" -o "$browser_body"
+if grep -qiE 'browser screening|served through a pinggy tunnel|confirm.*continue' "$browser_body"; then
+  echo "::error::Pinggy browser screening page is still visible."
+  exit 1
+fi
+if ! grep -qiE 'jitsi|config\.js|app\.bundle' "$browser_body"; then
+  echo "::error::Browser-like request did not return the Jitsi page."
+  exit 1
+fi
+rm -f "$browser_body"
+echo "Browser-like request reaches Jitsi without Pinggy screening."
+
 cd runtime/docker-jitsi-meet
 
 for _ in $(seq 1 30); do

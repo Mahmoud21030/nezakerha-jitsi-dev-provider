@@ -28,7 +28,7 @@ if [[ -z "$udp_ip" || -z "$udp_port" ]]; then
   exit 1
 fi
 
-pinggy -l http://127.0.0.1:8000 > runtime/pinggy-http.log 2>&1 &
+pinggy -l http://127.0.0.1:8000 'a:X-Pinggy-No-Screen:1' > runtime/pinggy-http.log 2>&1 &
 echo $! > runtime/pinggy-http.pid
 
 meet_url=""
