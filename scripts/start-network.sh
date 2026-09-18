@@ -3,19 +3,19 @@ set -euo pipefail
 
 mkdir -p runtime
 
-pinggy --type udp -l 10000 > runtime/pinggy.log 2>&1 &
-echo $! > runtime/pinggy.pid
+pinggy --type udp -l 10000 > runtime/pinggy-udp.log 2>&1 &
+echo $! > runtime/pinggy-udp.pid
 
 udp_endpoint=""
 for _ in $(seq 1 60); do
-  udp_endpoint="$(grep -Eo 'udp://[^[:space:]]+:[0-9]+' runtime/pinggy.log | head -n 1 || true)"
+  udp_endpoint="$(grep -Eo 'udp://[^[:space:]]+:[0-9]+' runtime/pinggy-udp.log | head -n 1 || true)"
   [[ -n "$udp_endpoint" ]] && break
   sleep 1
 done
 
 if [[ -z "$udp_endpoint" ]]; then
   echo "::error::Pinggy UDP endpoint was not created."
-  cat runtime/pinggy.log || true
+  cat runtime/pinggy-udp.log || true
   exit 1
 fi
 
@@ -28,19 +28,22 @@ if [[ -z "$udp_ip" || -z "$udp_port" ]]; then
   exit 1
 fi
 
-/tmp/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8000 > runtime/cloudflared.log 2>&1 &
-echo $! > runtime/cloudflared.pid
+pinggy -l http://127.0.0.1:8000 > runtime/pinggy-http.log 2>&1 &
+echo $! > runtime/pinggy-http.pid
 
 meet_url=""
 for _ in $(seq 1 60); do
-  meet_url="$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' runtime/cloudflared.log | head -n 1 || true)"
-  [[ -n "$meet_url" ]] && break
+  meet_url="$(grep -Eo 'https://[^[:space:]]+' runtime/pinggy-http.log | sed 's/[[:punct:]]$//' | head -n 1 || true)"
+  if [[ "$meet_url" == https://* ]]; then
+    break
+  fi
+  meet_url=""
   sleep 1
 done
 
 if [[ -z "$meet_url" ]]; then
-  echo "::error::Cloudflare Quick Tunnel URL was not created."
-  tail -n 80 runtime/cloudflared.log || true
+  echo "::error::Pinggy HTTPS endpoint was not created."
+  cat runtime/pinggy-http.log || true
   exit 1
 fi
 
@@ -48,5 +51,5 @@ echo "meet_url=$meet_url" >> "$GITHUB_OUTPUT"
 echo "jvb_public_ip=$udp_ip" >> "$GITHUB_OUTPUT"
 echo "jvb_public_port=$udp_port" >> "$GITHUB_OUTPUT"
 
-echo "Meeting web endpoint ready."
+echo "Meeting HTTPS endpoint ready: $meet_url"
 echo "JVB UDP endpoint ready on public port $udp_port."

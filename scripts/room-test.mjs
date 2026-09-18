@@ -47,7 +47,10 @@ const recorder = await chromium.launch({
   ]
 });
 
-const recorderPage = await recorder.newPage({ viewport: { width: 1280, height: 720 } });
+const recorderPage = await recorder.newPage({
+  viewport: { width: 1280, height: 720 },
+  extraHTTPHeaders: { 'X-Pinggy-No-Screen': '1' }
+});
 recorderPage.on('console', message => {
   const value = message.text();
   if (/error|failed|ice|conference/i.test(value)) {
@@ -72,7 +75,10 @@ const publisher = await chromium.launch({
   ]
 });
 
-const publisherPage = await publisher.newPage({ viewport: { width: 640, height: 360 } });
+const publisherPage = await publisher.newPage({
+  viewport: { width: 640, height: 360 },
+  extraHTTPHeaders: { 'X-Pinggy-No-Screen': '1' }
+});
 publisherPage.on('console', message => {
   const value = message.text();
   if (/error|failed|ice|conference/i.test(value)) {
