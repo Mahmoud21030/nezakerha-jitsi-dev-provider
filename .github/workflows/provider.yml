@@ -75,6 +75,8 @@ jobs:
               uptime
               echo "--- docker ---"
               docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' || true
+              echo "--- recorder processes ---"
+              ps -eo pid,comm,%cpu,%mem,rss,args --sort=-%cpu | grep -E '[c]hromium|[f]fmpeg|[X]vfb|[p]ulseaudio' | head -n 30 || true
               echo
               sleep 5
             done
