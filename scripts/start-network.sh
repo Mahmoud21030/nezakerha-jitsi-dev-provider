@@ -33,7 +33,7 @@ echo $! > runtime/pinggy-http.pid
 
 meet_url=""
 for _ in $(seq 1 60); do
-  meet_url="$(grep -Eo 'https://[^[:space:]]+' runtime/pinggy-http.log | sed 's/[[:punct:]]$//' | head -n 1 || true)"
+  meet_url="$(sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' runtime/pinggy-http.log | grep -Eo 'https://[^[:space:]]+' | sed 's/[[:punct:]]$//' | head -n 1 || true)"
   if [[ "$meet_url" == https://* ]]; then
     break
   fi
